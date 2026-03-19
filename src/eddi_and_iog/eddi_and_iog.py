@@ -66,6 +66,10 @@ class EddiSyncApp:
         self._tank = MyEnergi.get_tank_id(self._tank_str)
         self._active_end:  datetime | None = None
 
+        # Limit the Octopus API usage
+        if self.poll_interval < 60:
+            self.poll_interval = 60
+
     def _info(self, msg):
         if self._uio:
             self._uio.info(f"Octopus API: {msg}")
