@@ -1,0 +1,4 @@
+linux/*.tar.gz
+src/eddi_and_iog/__pycache__/
+tests/__pycache__/
+linux/*.tar.gz
