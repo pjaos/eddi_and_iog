@@ -1,8 +1,8 @@
 # eddi_and_iog
 
-A tool that bridges **Intelligent Octopus Go** and a **myenery EDDI**.
+A tool that bridges **Intelligent Octopus Go** and a **myenery eddi**.
 
-When Octopus Energy schedules an EV charge *outside* the standard off-peak window (23:30–05:30), this tool detects the extra dispatch slot and automatically programmes the myenergi EDDI to heat water (using an emersion heater) from grid power during that period — letting you take advantage of cheap electricity.
+When Octopus Energy schedules an EV charge *outside* the standard off-peak window (23:30–05:30), this tool detects the extra dispatch slot and automatically programmes the myenergi eddi to heat water (using an emersion heater) from grid power during that period — letting you take advantage of cheap electricity.
 
 ---
 
@@ -12,16 +12,16 @@ This tool is only useful if you have **all three** of the following:
 
 - An electric vehicle (EV)
 - An **Intelligent Octopus Go** tariff (used to charge the EV)
-- A **myenergi EDDI unit**
+- A **myenergi eddi unit**
 
 ---
 
 ## How it works
 
-1. Every 3 minutes (configurable) the tool queries the **Octopus Energy GraphQL API** for planned dispatches.
+1. Every 3 minutes (configurable, min every 1 min) the tool queries the **Octopus Energy GraphQL API** for planned dispatches.
 2. Any dispatch slot whose start or end falls *outside* the standard 23:30–05:30 off-peak window is treated as an extra intelligent slot.
-3. If the tool is currently inside such a slot and no myenergi EDDI schedule is active, it updates the schedule into **time slot 4** on the myenergi EDDI (reserved for this purpose, so slots 1, 2 & 3 for your fixed overnight schedule are untouched).
-4. When the slot ends, the myenergi EDDI schedule is automatically cleared.
+3. If the tool is currently inside such a slot and no myenergi eddi schedule is active, it updates the schedule into **time slot 4** on the myenergi eddi (reserved for this purpose, so slots 1, 2 & 3 for your fixed overnight schedule are untouched).
+4. When the slot ends, the myenergi eddi schedule is automatically cleared.
 5. Syslog is updated to detail when schedules are added and removed.
 
 ---
@@ -30,7 +30,7 @@ This tool is only useful if you have **all three** of the following:
 
 - Hardware to run the app on. I have tested it on a Raspberry Pi 2 W but it should run on any Linux, windows or MAC machine that meets the python requirements.
 - Python **3.11.2** or later
-- A **myenergi API Key and EDDI serial number** — You can find details of how to get a myenergi API key at [myenergi API Key](https://support.myenergi.com/hc/en-gb/articles/5069627351185-How-do-I-get-an-API-key)
+- A **myenergi API Key and eddi serial number** — You can find details of how to get a myenergi API key at [myenergi API Key](https://support.myenergi.com/hc/en-gb/articles/5069627351185-How-do-I-get-an-API-key)
 - An **Octopus Energy API key** — available in your Octopus account dashboard
 
 ---
@@ -73,7 +73,7 @@ MYENERGI_EDDI_SN=XXXXXXXX
 MYENERGI_EDDI_TANK=TOP
 ```
 
-At least one output on your EDDI unit must be connected to an emersion heater on the water tank (TOP and BOTTOM are value MYENERGI_EDDI_TANK values).
+At least one output on your eddi unit must be connected to an emersion heater on the water tank (TOP and BOTTOM are value MYENERGI_EDDI_TANK values).
 
 ### Optional environment variables
 
@@ -148,8 +148,8 @@ Check your `OCTOPUS_API_KEY` and `OCTOPUS_ACCOUNT_NO` values and ensure you are 
 **"myenergi API error"**
 Verify your `MYENERGI_API_KEY`, `MYENERGI_EDDI_SN`.
 
-**EDDI not heating hot water during the slot**
-Check that `MYENERGI_EDDI_TANK` is details the EDDI output connected to an emersion heater on the hot water tank.
+**eddi not heating hot water during the slot**
+Check that `MYENERGI_EDDI_TANK` is details the eddi output connected to an emersion heater on the hot water tank.
 
 ---
 
