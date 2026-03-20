@@ -102,7 +102,7 @@ eddi_and_iog -e /home/auser/eddi_and_iog.env
 
 ### Running as a service
 
-Use the built-in boot manager to have the tool start automatically:
+Use the built-in boot manager to have the tool start automatically (Linux only):
 
 ```bash
 eddi_and_iog -e /home/auser/eddi_and_iog.env --enable_auto_start
@@ -117,7 +117,9 @@ eddi_and_iog/
 ├── src/
 │   └── eddi_and_iog/
 │       └── eddi_and_iog.py   # Main application
-├── install.py                 # Cross-platform installer
+|       └── myenergi.py       # myenergi API interface
+|       └── octopus.py        # Octopus API interface
+├── install.py                # Cross-platform installer
 ├── pyproject.toml
 └── README.md
 ```
@@ -131,6 +133,7 @@ eddi_and_iog/
 | `requests` | HTTP calls to Octopus and SolisCloud APIs |
 | `python-dotenv` | Loading credentials from the `.env` file |
 | `p3lib` | Logging, boot manager, and CLI utilities |
+| 'pytest' | Python test framework |
 
 ---
 
@@ -149,7 +152,7 @@ Check your `OCTOPUS_API_KEY` and `OCTOPUS_ACCOUNT_NO` values and ensure you are 
 Verify your `MYENERGI_API_KEY`, `MYENERGI_EDDI_SN`.
 
 **eddi not heating hot water during the slot**
-Check that `MYENERGI_EDDI_TANK` is details the eddi output connected to an emersion heater on the hot water tank.
+Check that `MYENERGI_EDDI_TANK` is connected to an emersion heater on the hot water tank.
 
 ---
 
