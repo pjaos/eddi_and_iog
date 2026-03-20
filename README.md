@@ -22,6 +22,7 @@ This tool is only useful if you have **all three** of the following:
 2. Any dispatch slot whose start or end falls *outside* the standard 23:30–05:30 off-peak window is treated as an extra intelligent slot.
 3. If the tool is currently inside such a slot and no myenergi EDDI schedule is active, it updates the schedule into **time slot 4** on the myenergi EDDI (reserved for this purpose, so slots 1, 2 & 3 for your fixed overnight schedule are untouched).
 4. When the slot ends, the myenergi EDDI schedule is automatically cleared.
+5. Syslog is updated to detail when schedules are added and removed.
 
 ---
 
