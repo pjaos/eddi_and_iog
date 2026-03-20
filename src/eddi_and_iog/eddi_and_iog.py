@@ -2,7 +2,7 @@
 eddi_and_iog.py
 ================================
 Monitors Octopus Energy Intelligent Go for extra (outside 23:30-05:30) dispatch
-slots and mirrors them as charge-time windows on a Myenergi EDDI unit to heat
+slots and mirrors them as charge-time windows on a Myenergi eddi unit to heat
 hot water from grid power.
 
 How it works:
@@ -10,17 +10,17 @@ How it works:
        plannedDispatches.
     2. Any dispatch slot whose start OR end falls outside the standard off-peak
        window (23:30-05:30) is considered an "intelligent" extra slot.
-    3. If we are currently inside such a slot and EDDI schedule is active,
+    3. If we are currently inside such a slot and eddi schedule is active,
        one is created (charge time slot 3, which we reserve for this purpose).
     4. When the slot ends the schedule is cleared.
 
-EDDI API notes:
+eddi API notes:
     - You need a myenergi API Key.
       https://support.myenergi.com/hc/en-gb/articles/5069627351185-How-do-I-get-an-API-key
       details how to get this API key.
-    - Myenergy EDDI units have 4 schedule time slots. This script uses the last slot by
+    - Myenergy eddi units have 4 schedule time slots. This script uses the last slot by
       default so as not to conflict with your fixed overnight schedule in slots 1, 2 & 3.
-    - The Myenergy EDDI can control 2 heaters TOP and BOTTOM. The default is TOP.
+    - The Myenergy eddi can control 2 heaters TOP and BOTTOM. The default is TOP.
 """
 
 import argparse
@@ -43,7 +43,7 @@ from eddi_and_iog.myenergi import MyEnergi
 class EddiSyncApp:
     """
     Orchestrates the sync loop between OctopusClient and MyEnergi.
-    Polls Octopus for extra dispatch slots and keeps the MyEnergi EDDI
+    Polls Octopus for extra dispatch slots and keeps the MyEnergi eddi
     charge schedule in sync.
     """
 
@@ -80,8 +80,8 @@ class EddiSyncApp:
 
     def run(self) -> None:
         """Start the polling loop. Runs indefinitely."""
-        self._info("=== Octopus -> Solis Intelligent Charging Sync starting ===")
-        self._info(f"Account: {self.octopus.account_number} | EDDI: {self.myenergy.get_eddi_serial_number()} | TANK: {self._tank_str} | Poll: {self.poll_interval}s")
+        self._info("=== Octopus -> eddi Intelligent water heating starting ===")
+        self._info(f"Account: {self.octopus.account_number} | eddi: {self.myenergy.get_eddi_serial_number()} | TANK: {self._tank_str} | Poll: {self.poll_interval}s")
         while True:
             self._poll()
             time.sleep(self.poll_interval)
@@ -112,7 +112,7 @@ class EddiSyncApp:
             self._active_end  = end
 
         elif self._active_end != end:
-            self._info(f"Dispatch end time changed to {EddiSyncApp.fmt_time(end)}, updating Solis.")
+            self._info(f"Dispatch end time changed to {EddiSyncApp.fmt_time(end)}, updating eddi.")
             self.myenergy.set_tank_schedule(True,
                                             start,
                                             end-start,
@@ -124,7 +124,7 @@ class EddiSyncApp:
 
     def _handle_no_dispatch(self) -> None:
         if self._slot_active:
-            self._info("No active extra dispatch — clearing Solis charge slot.")
+            self._info("No active extra dispatch — clearing eddi charge slot.")
             self.myenergy.set_tank_schedule(False,
                                             None,
                                             None,
@@ -165,7 +165,7 @@ def main() -> None:
     uio = UIO()
     options = None
     try:
-        parser = argparse.ArgumentParser(description="A tool to check if your Intelligent Octopus Go account has scheduled an EV charge outside the 23:30-5:30 slot. If this is found to be the case configure your myenergi EDDI unit to heat water using grid power in the scheduled period. This allows use the water to be heated during this time on low cost electricity. !!! This tool is only useful to you if you have an EV, are on the Intelligent Octopus Go tariff (used to charge the EV) and have a myenergi EDDI unit connected to an emersion heater on your hot water tank.",
+        parser = argparse.ArgumentParser(description="A tool to check if your Intelligent Octopus Go account has scheduled an EV charge outside the 23:30-5:30 slot. If this is found to be the case configure your myenergi eddi unit to heat water using grid power in the scheduled period. This allows use the water to be heated during this time on low cost electricity. !!! This tool is only useful to you if you have an EV, are on the Intelligent Octopus Go tariff (used to charge the EV) and have a myenergi eddi unit connected to an emersion heater on your hot water tank.",
                                          formatter_class=argparse.RawDescriptionHelpFormatter)
         parser.add_argument("-d", "--debug",  action='store_true', help="Enable debugging.")
         parser.add_argument("-e", "--env",    help="The absolute path to the env file containing the Octopus and myenergy details.", default=None)
