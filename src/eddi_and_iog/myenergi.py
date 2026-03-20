@@ -371,7 +371,6 @@ class MyEnergi(object):
            @param tank The hot water tank (1=top, 2 = bottom)."""
 
         self._check_eddi_serial_number()
-        print(f"PJA: tank={tank}")
         if tank not in [MyEnergi.TOP_TANK_ID, MyEnergi.BOTTOM_TANK_ID]:
             raise Exception(f"{tank} is an invalid water tank. Must be {MyEnergi.TOP_TANK_ID} (top) or {MyEnergi.BOTTOM_TANK_ID} (bottom).")
 
