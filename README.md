@@ -27,6 +27,7 @@ This tool is only useful if you have **all three** of the following:
 
 ## Prerequisites
 
+- Hardware to run the app on. I have tested it on a Raspberry Pi 2 W but it should run on any Linux, windows or MAC machine that meets the python requirements.
 - Python **3.11.2** or later
 - A **myenergi API Key and EDDI serial number** — You can find details of how to get a myenergi API key at [myenergi API Key](https://support.myenergi.com/hc/en-gb/articles/5069627351185-How-do-I-get-an-API-key)
 - An **Octopus Energy API key** — available in your Octopus account dashboard
