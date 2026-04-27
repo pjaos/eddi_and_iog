@@ -1,5 +1,8 @@
 #!/bin/bash
-mkdir src/eddi_and_iog/assets
+if [ ! -d "src/eddi_and_iog/assets" ]; then
+    mkdir src/eddi_and_iog/assets
+fi
+
 
 set -e # Stop on code check or test errors
 ./check_code.sh # Run some checks on the code before building it
