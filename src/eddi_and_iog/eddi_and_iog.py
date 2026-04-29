@@ -99,6 +99,16 @@ class EddiSyncApp:
         else:
             self._handle_no_dispatch()
 
+    def _log_heater_power(self) -> None:
+        """Query and log the current CT clamp power readings from the eddi."""
+        try:
+            ectp1, ectp2 = self.myenergy.get_eddi_heater_power()
+            p1_str = f"{ectp1} W" if ectp1 is not None else "unavailable"
+            p2_str = f"{ectp2} W" if ectp2 is not None else "unavailable"
+            self._info(f"Heater power — CT1 (ectp1): {p1_str}, CT2 (ectp2): {p2_str}")
+        except Exception as exc:
+            self._info(f"Could not read heater power: {exc}")
+
     def _handle_active_dispatch(self, dispatch: dict) -> None:
         end = dispatch["end"]
         start = dispatch["start"]
@@ -121,6 +131,8 @@ class EddiSyncApp:
 
         else:
             self._info(f"Dispatch still active until {EddiSyncApp.fmt_time(end)}.")
+
+        self._log_heater_power()
 
     def _handle_no_dispatch(self) -> None:
         if self._slot_active:

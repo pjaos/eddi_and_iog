@@ -1,6 +1,6 @@
 [project]
 name = "eddi-and-iog"
-version = "1.0.3"
+version = "1.0.4"
 description = "A tool to check if your Intelligent Octopus Go account has scheduled an EV charge outside the 23:30-5:30 slot. If this is found to be the case configure your Myenergi EDDI unit to heat water during this period using cheap grid energy."
 authors = [
     {name = "Paul Austen",email = "pjaos@gmail.com"}

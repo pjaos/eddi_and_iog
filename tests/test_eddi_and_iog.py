@@ -456,6 +456,45 @@ class TestMyEnergiValidBoostDict:
         assert self.me._is_valid_boost_dict({}) is False
 
 
+
+
+# ===========================================================================
+# MyEnergi – get_eddi_heater_power
+# ===========================================================================
+
+class TestMyEnergiGetEddiHeaterPower:
+    def setup_method(self):
+        self.me = _make_myenergi()
+
+    def test_returns_both_values_when_present(self):
+        self.me._eddi_stats_dict = {"ectp1": 1800, "ectp2": 0}
+        ectp1, ectp2 = self.me.get_eddi_heater_power()
+        assert ectp1 == 1800
+        assert ectp2 == 0
+
+    def test_returns_none_when_ectp2_absent(self):
+        # _get_eddi_stat calls update_stats() when a key is missing, so mock it
+        # to keep the dict as-is (ectp2 genuinely absent from this device).
+        self.me._eddi_stats_dict = {"ectp1": 2000}
+        with patch.object(self.me, "update_stats"):
+            ectp1, ectp2 = self.me.get_eddi_heater_power()
+        assert ectp1 == 2000
+        assert ectp2 is None
+
+    def test_returns_none_for_both_when_stats_absent(self):
+        # Mock update_stats so it doesn't hit the real API; dict stays empty.
+        self.me._eddi_stats_dict = {}
+        with patch.object(self.me, "update_stats"):
+            ectp1, ectp2 = self.me.get_eddi_heater_power()
+        assert ectp1 is None
+        assert ectp2 is None
+
+    def test_returns_tuple(self):
+        self.me._eddi_stats_dict = {"ectp1": 500, "ectp2": 1500}
+        result = self.me.get_eddi_heater_power()
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
 # ===========================================================================
 # MyEnergi – set_tank_schedule (mocked HTTP)
 # ===========================================================================
@@ -641,6 +680,73 @@ class TestEddiSyncAppPoll:
         app._poll()
 
         myenergi.set_tank_schedule.assert_not_called()
+
+
+    # --- heater power logging ------------------------------------------------
+
+    def test_power_logged_on_first_dispatch(self):
+        app, octopus, myenergi = self._make_app()
+        myenergi.get_eddi_heater_power.return_value = (1800, 0)
+        dispatch = self._make_dispatch()
+        octopus.find_active_extra_dispatch.return_value = dispatch
+
+        app._poll()
+
+        myenergi.get_eddi_heater_power.assert_called_once()
+
+    def test_power_logged_on_continued_dispatch(self):
+        """Power is logged even when the slot is already active with no change."""
+        app, octopus, myenergi = self._make_app()
+        myenergi.get_eddi_heater_power.return_value = (2000, 0)
+        dispatch = self._make_dispatch()
+        app._slot_active = True
+        app._active_end  = dispatch["end"]
+        octopus.find_active_extra_dispatch.return_value = dispatch
+
+        app._poll()
+
+        myenergi.get_eddi_heater_power.assert_called_once()
+
+    def test_power_logged_on_end_time_change(self):
+        app, octopus, myenergi = self._make_app()
+        myenergi.get_eddi_heater_power.return_value = (1600, 200)
+        original_end = datetime.now(timezone.utc) + timedelta(minutes=30)
+        dispatch = self._make_dispatch(duration_mins=90)
+        app._slot_active = True
+        app._active_end  = original_end
+        octopus.find_active_extra_dispatch.return_value = dispatch
+
+        app._poll()
+
+        myenergi.get_eddi_heater_power.assert_called_once()
+
+    def test_power_not_logged_when_no_dispatch(self):
+        """Power should NOT be queried when there is no active dispatch."""
+        app, octopus, myenergi = self._make_app()
+        octopus.find_active_extra_dispatch.return_value = None
+
+        app._poll()
+
+        myenergi.get_eddi_heater_power.assert_not_called()
+
+    def test_power_log_survives_api_exception(self):
+        """An exception from get_eddi_heater_power should not crash the poll loop."""
+        app, octopus, myenergi = self._make_app()
+        myenergi.get_eddi_heater_power.side_effect = Exception("comms error")
+        dispatch = self._make_dispatch()
+        octopus.find_active_extra_dispatch.return_value = dispatch
+
+        # Should not raise
+        app._poll()
+
+    def test_power_values_both_none_handled(self):
+        """(None, None) from a missing stat should not raise."""
+        app, octopus, myenergi = self._make_app()
+        myenergi.get_eddi_heater_power.return_value = (None, None)
+        dispatch = self._make_dispatch()
+        octopus.find_active_extra_dispatch.return_value = dispatch
+
+        app._poll()  # no exception expected
 
     # --- poll interval floor -------------------------------------------------
 

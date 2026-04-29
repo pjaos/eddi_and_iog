@@ -192,6 +192,14 @@ class MyEnergi(object):
         """@return The eddi heater power in kw or None if not known."""
         return self._get_eddi_stat('ectp1')
 
+    def get_eddi_heater_power(self) -> tuple:
+        """@brief Return the current power drawn by both CT clamp inputs.
+           @return A tuple (ectp1_watts, ectp2_watts). Either value may be
+                   None if the reading is unavailable from the API."""
+        ectp1 = self._get_eddi_stat('ectp1', throw_error=False)
+        ectp2 = self._get_eddi_stat('ectp2', throw_error=False)
+        return ectp1, ectp2
+
     def get_eddi_heater_number(self):
         """@return The eddi heater number that is on.
                    If no heater is on then this stays at the last value.
