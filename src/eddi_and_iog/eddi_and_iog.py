@@ -102,10 +102,24 @@ class EddiSyncApp:
     def _log_heater_power(self) -> None:
         """Query and log the current CT clamp power readings from the eddi."""
         try:
-            ectp1, ectp2 = self.myenergy.get_eddi_heater_power()
-            p1_str = f"{ectp1} W" if ectp1 is not None else "unavailable"
-            p2_str = f"{ectp2} W" if ectp2 is not None else "unavailable"
-            self._info(f"Heater power — CT1 (ectp1): {p1_str}, CT2 (ectp2): {p2_str}")
+            on_heater = self.myenergy.get_eddi_heater_number()
+            heater_name = MyEnergi.get_tank_name(on_heater)
+            on_heater_str = f"{on_heater}" if on_heater is not None else "unavailable"
+
+            on_heater_watts = self.myenergy.get_eddi_selected_heater_watts()
+            p1_str = f"{on_heater_watts} W" if on_heater_watts is not None else "unavailable"
+
+            if on_heater_watts:
+                self._info(f"{heater_name} heater ({on_heater_str}) is ON and it is drawing {p1_str}")
+            else:
+                self._info(f"{heater_name} heater ({on_heater_str}) is OFF.")
+
+            tt = self.myenergy.get_eddi_top_tank_temp()
+            bt = self.myenergy.get_eddi_bottom_tank_temp()
+            tt_str = f"{tt} °C" if tt is not None else "unavailable"
+            bt_str = f"{bt} °C" if bt is not None else "unavailable"
+            self._info(f"Tank Temp: TOP: {tt_str}, BOTTOM: {bt_str}")
+
         except Exception as exc:
             self._info(f"Could not read heater power: {exc}")
 

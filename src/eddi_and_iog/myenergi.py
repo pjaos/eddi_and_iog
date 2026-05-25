@@ -73,6 +73,17 @@ class MyEnergi(object):
 
         return tank
 
+    @staticmethod
+    def get_tank_name(tank_id):
+        """@brief Get the tank name given a int id, either 1 or 2"""
+        tank_name = "unknown"
+        if tank_id == MyEnergi.TANK_TOP:
+            tank_name = MyEnergi.TANK_STOP_STR
+
+        elif tank_id == MyEnergi.TANK_BOTTOM:
+            tank_name = MyEnergi.TANK_BOTTOM_STR
+
+        return tank_name
 
     def __init__(self, api_key: str, uio=None):
         """@brief Constuctor
@@ -191,6 +202,10 @@ class MyEnergi(object):
     def get_eddi_heater_watts(self):
         """@return The eddi heater power in kw or None if not known."""
         return self._get_eddi_stat('ectp1')
+
+    def get_eddi_selected_heater_watts(self):
+        """@return The eddi heater power for the heater that is on in kw or None if not known."""
+        return self._get_eddi_stat('div')
 
     def get_eddi_heater_power(self) -> tuple:
         """@brief Return the current power drawn by both CT clamp inputs.
