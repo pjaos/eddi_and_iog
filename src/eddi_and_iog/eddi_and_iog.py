@@ -253,6 +253,13 @@ def main() -> None:
             raise
         else:
             uio.error(str(ex))
+            # We delay for 5 seconds here as if this cmd is launched by systemd it will
+            # be called again very shortly.
+            # If the myenergi API returns an error we don't want to try again to quickly
+            # or the myenergi API will start rejecting requests because they are being
+            # sent to frequently.
+            uio.info("Waiting 5 seconds before exit to reduce myenergi API load.")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()

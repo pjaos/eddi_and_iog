@@ -683,21 +683,34 @@ class TestEddiSyncAppPoll:
 
 
     # --- heater power logging ------------------------------------------------
+    # _log_heater_power calls: get_eddi_heater_number, get_eddi_selected_heater_watts,
+    # get_eddi_top_tank_temp, get_eddi_bottom_tank_temp
+
+    def _setup_heater_mocks(self, myenergi, heater_no=1, watts=1800, top_temp=55, bot_temp=40):
+        """Set return values for all four methods called by _log_heater_power."""
+        myenergi.get_eddi_heater_number.return_value = heater_no
+        myenergi.get_eddi_selected_heater_watts.return_value = watts
+        myenergi.get_eddi_top_tank_temp.return_value = top_temp
+        myenergi.get_eddi_bottom_tank_temp.return_value = bot_temp
 
     def test_power_logged_on_first_dispatch(self):
+        """All four heater-stat methods are called when a new dispatch is activated."""
         app, octopus, myenergi = self._make_app()
-        myenergi.get_eddi_heater_power.return_value = (1800, 0)
+        self._setup_heater_mocks(myenergi)
         dispatch = self._make_dispatch()
         octopus.find_active_extra_dispatch.return_value = dispatch
 
         app._poll()
 
-        myenergi.get_eddi_heater_power.assert_called_once()
+        myenergi.get_eddi_heater_number.assert_called_once()
+        myenergi.get_eddi_selected_heater_watts.assert_called_once()
+        myenergi.get_eddi_top_tank_temp.assert_called_once()
+        myenergi.get_eddi_bottom_tank_temp.assert_called_once()
 
     def test_power_logged_on_continued_dispatch(self):
         """Power is logged even when the slot is already active with no change."""
         app, octopus, myenergi = self._make_app()
-        myenergi.get_eddi_heater_power.return_value = (2000, 0)
+        self._setup_heater_mocks(myenergi, watts=2000)
         dispatch = self._make_dispatch()
         app._slot_active = True
         app._active_end  = dispatch["end"]
@@ -705,11 +718,13 @@ class TestEddiSyncAppPoll:
 
         app._poll()
 
-        myenergi.get_eddi_heater_power.assert_called_once()
+        myenergi.get_eddi_heater_number.assert_called_once()
+        myenergi.get_eddi_selected_heater_watts.assert_called_once()
 
     def test_power_logged_on_end_time_change(self):
+        """Power is logged when the dispatch end time is extended."""
         app, octopus, myenergi = self._make_app()
-        myenergi.get_eddi_heater_power.return_value = (1600, 200)
+        self._setup_heater_mocks(myenergi, watts=1600)
         original_end = datetime.now(timezone.utc) + timedelta(minutes=30)
         dispatch = self._make_dispatch(duration_mins=90)
         app._slot_active = True
@@ -718,31 +733,47 @@ class TestEddiSyncAppPoll:
 
         app._poll()
 
-        myenergi.get_eddi_heater_power.assert_called_once()
+        myenergi.get_eddi_heater_number.assert_called_once()
+        myenergi.get_eddi_selected_heater_watts.assert_called_once()
 
     def test_power_not_logged_when_no_dispatch(self):
-        """Power should NOT be queried when there is no active dispatch."""
+        """Heater stat methods should NOT be called when there is no active dispatch."""
         app, octopus, myenergi = self._make_app()
         octopus.find_active_extra_dispatch.return_value = None
 
         app._poll()
 
-        myenergi.get_eddi_heater_power.assert_not_called()
+        myenergi.get_eddi_heater_number.assert_not_called()
+        myenergi.get_eddi_selected_heater_watts.assert_not_called()
+        myenergi.get_eddi_top_tank_temp.assert_not_called()
+        myenergi.get_eddi_bottom_tank_temp.assert_not_called()
 
     def test_power_log_survives_api_exception(self):
-        """An exception from get_eddi_heater_power should not crash the poll loop."""
+        """An exception from any heater stat method should not crash the poll loop."""
         app, octopus, myenergi = self._make_app()
-        myenergi.get_eddi_heater_power.side_effect = Exception("comms error")
+        myenergi.get_eddi_heater_number.side_effect = Exception("comms error")
         dispatch = self._make_dispatch()
         octopus.find_active_extra_dispatch.return_value = dispatch
 
         # Should not raise
         app._poll()
 
-    def test_power_values_both_none_handled(self):
-        """(None, None) from a missing stat should not raise."""
+    def test_power_values_none_handled(self):
+        """None returns from stat methods should not raise."""
         app, octopus, myenergi = self._make_app()
-        myenergi.get_eddi_heater_power.return_value = (None, None)
+        myenergi.get_eddi_heater_number.return_value = None
+        myenergi.get_eddi_selected_heater_watts.return_value = None
+        myenergi.get_eddi_top_tank_temp.return_value = None
+        myenergi.get_eddi_bottom_tank_temp.return_value = None
+        dispatch = self._make_dispatch()
+        octopus.find_active_extra_dispatch.return_value = dispatch
+
+        app._poll()  # no exception expected
+
+    def test_heater_off_when_watts_zero(self):
+        """When selected heater watts is 0/falsy the 'OFF' branch is logged without error."""
+        app, octopus, myenergi = self._make_app()
+        self._setup_heater_mocks(myenergi, watts=0)
         dispatch = self._make_dispatch()
         octopus.find_active_extra_dispatch.return_value = dispatch
 
