@@ -153,15 +153,22 @@ class MyEnergi(object):
                             # Assign the zappi dict
                             self._zappi_stats_dict = zappi_dict
 
+    def invalidate_stats_cache(self) -> None:
+        """@brief Discard any cached eddi/zappi stats so the next call to
+                  _get_eddi_stat() or _get_zappi_stat() fetches live data
+                  from the device rather than returning stale values."""
+        self._eddi_stats_dict  = None
+        self._zappi_stats_dict = None
+
     def _get_eddi_stat(self, name, throw_error=True):
         """@brief Get a eddi stat after update_stats() has been called.
            @param name The name of the stat of interest.
            @param throw_error True if this method should throw an error if the stats is not found.
            @return The stat or None if not found."""
         stat = None
-        # If the stats have not been read yet, read them
-        if not self._eddi_stats_dict or name not in self._eddi_stats_dict:
-            self.update_stats()
+        # Always refresh the cache; stale values from a previous poll would
+        # otherwise be returned for the lifetime of the process.
+        self.update_stats()
 
         if self._eddi_stats_dict:
             if name in self._eddi_stats_dict:
@@ -178,9 +185,8 @@ class MyEnergi(object):
            @param throw_error True if this method should throw an error if the stats is not found.
            @return The stat or None if not found."""
         stat = None
-        # If the stats have not been read yet, read them
-        if not self._zappi_stats_dict or name not in self._zappi_stats_dict:
-            self.update_stats()
+        # Always refresh the cache (see _get_eddi_stat comment above).
+        self.update_stats()
 
         if self._zappi_stats_dict:
             if name in self._zappi_stats_dict:

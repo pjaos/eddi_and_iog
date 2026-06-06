@@ -48,9 +48,9 @@ class EddiSyncApp:
     """
 
     @staticmethod
-    def fmt_time(dt: datetime) -> str:
+    def fmt_time(dt: datetime | None) -> str:
         """Format a datetime as HH:MM in local time for the MyEnergi API."""
-        return dt.astimezone().strftime("%H:%M")
+        return dt.astimezone().strftime("%H:%M") if dt is not None else "??:??"
 
     def __init__(self,
                  octopus: OctopusClient,
@@ -64,7 +64,8 @@ class EddiSyncApp:
         self._slot_active  = False
         self._tank_str = os.getenv("MYENERGI_EDDI_TANK",  "")
         self._tank = MyEnergi.get_tank_id(self._tank_str)
-        self._active_end:  datetime | None = None
+        self._active_start: datetime | None = None
+        self._active_end:   datetime | None = None
 
         # Limit the Octopus API usage
         if self.poll_interval < 60:
@@ -92,6 +93,9 @@ class EddiSyncApp:
 
     def _poll(self) -> None:
         """Single poll iteration."""
+        # Invalidate the cached eddi stats so _log_heater_power() always
+        # reads live values rather than values from the previous poll.
+        self.myenergy.invalidate_stats_cache()
         dispatch = self.octopus.find_active_extra_dispatch()
 
         if dispatch:
@@ -124,27 +128,39 @@ class EddiSyncApp:
             self._info(f"Could not read heater power: {exc}")
 
     def _handle_active_dispatch(self, dispatch: dict) -> None:
-        end = dispatch["end"]
+        end   = dispatch["end"]
         start = dispatch["start"]
-        if not self._slot_active:
-            self._info(f'Extra dispatch detected: {EddiSyncApp.fmt_time(dispatch["start"])} -> {EddiSyncApp.fmt_time(end)}')
-            self.myenergy.set_tank_schedule(True,
-                                            start,
-                                            end-start,
-                                            self._tank)
-            self._slot_active = True
-            self._active_end  = end
 
-        elif self._active_end != end:
-            self._info(f"Dispatch end time changed to {EddiSyncApp.fmt_time(end)}, updating eddi.")
-            self.myenergy.set_tank_schedule(True,
-                                            start,
-                                            end-start,
-                                            self._tank)
-            self._active_end = end
+        if not self._slot_active:
+            self._info(f"Extra dispatch detected: {EddiSyncApp.fmt_time(start)} -> {EddiSyncApp.fmt_time(end)}")
+            try:
+                self.myenergy.set_tank_schedule(True, start, end - start, self._tank)
+                # Only mark the slot as active once the API call has succeeded.
+                self._slot_active  = True
+                self._active_start = start
+                self._active_end   = end
+            except Exception as exc:
+                self._info(f"Failed to set eddi schedule: {exc} — will retry next poll.")
+
+        elif self._active_end != end or (self._active_start is not None and self._active_start != start):
+            # Octopus has rescheduled the slot (start, end, or both changed).
+            self._info(
+                f"Dispatch slot changed: {EddiSyncApp.fmt_time(self._active_start)} -> "
+                f"{EddiSyncApp.fmt_time(self._active_end)}  =>  "
+                f"{EddiSyncApp.fmt_time(start)} -> {EddiSyncApp.fmt_time(end)}, updating eddi."
+            )
+            try:
+                self.myenergy.set_tank_schedule(True, start, end - start, self._tank)
+                # Only update the cached times once the API call has succeeded.
+                self._active_start = start
+                self._active_end   = end
+            except Exception as exc:
+                self._info(f"Failed to update eddi schedule: {exc} — will retry next poll.")
 
         else:
-            self._info(f"Dispatch still active until {EddiSyncApp.fmt_time(end)}.")
+            # No change (or _active_start not yet recorded — adopt it silently).
+            self._active_start = start
+            self._info(f"Dispatch still active: {EddiSyncApp.fmt_time(start)} -> {EddiSyncApp.fmt_time(end)}.")
 
         self._log_heater_power()
 
@@ -155,8 +171,9 @@ class EddiSyncApp:
                                             None,
                                             None,
                                             self._tank)
-            self._slot_active = False
-            self._active_end  = None
+            self._slot_active  = False
+            self._active_start = None
+            self._active_end   = None
 
         else:
             self._info("No extra dispatch. Sleeping.")

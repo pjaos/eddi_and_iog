@@ -468,7 +468,8 @@ class TestMyEnergiGetEddiHeaterPower:
 
     def test_returns_both_values_when_present(self):
         self.me._eddi_stats_dict = {"ectp1": 1800, "ectp2": 0}
-        ectp1, ectp2 = self.me.get_eddi_heater_power()
+        with patch.object(self.me, "update_stats"):
+            ectp1, ectp2 = self.me.get_eddi_heater_power()
         assert ectp1 == 1800
         assert ectp2 == 0
 
@@ -491,7 +492,8 @@ class TestMyEnergiGetEddiHeaterPower:
 
     def test_returns_tuple(self):
         self.me._eddi_stats_dict = {"ectp1": 500, "ectp2": 1500}
-        result = self.me.get_eddi_heater_power()
+        with patch.object(self.me, "update_stats"):
+            result = self.me.get_eddi_heater_power()
         assert isinstance(result, tuple)
         assert len(result) == 2
 
