@@ -409,12 +409,13 @@ class MyEnergi(object):
             slot_id = MyEnergi.TANK_2_BOOST_SCHEDULE_SLOT_ID
 
         if on:
-            on_time_string = f"{on_datetime.hour:02d}{on_datetime.minute:02d}"
+            local_dt = on_datetime.astimezone()  # convert UTC → local time
+            on_time_string = f"{local_dt.hour:02d}{local_dt.minute:02d}"
             duration_hours, remainder = divmod(duration_timedelta.seconds, 3600)
             duration_minutes, _ = divmod(remainder, 60)
             duration_string = f"{duration_hours:01d}{duration_minutes:02d}"
 
-            day_of_week = on_datetime.weekday()
+            day_of_week = local_dt.weekday()
             day_of_week_string = self._get_day_of_week_string(day_of_week)
 
             schedule_string = f"{slot_id:02d}-{on_time_string}-{duration_string}-{day_of_week_string}"
