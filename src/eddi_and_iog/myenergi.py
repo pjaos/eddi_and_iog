@@ -1,6 +1,7 @@
 import json
 import threading
 from time import sleep
+from datetime import timedelta
 import requests
 from requests.auth import HTTPDigestAuth
 
@@ -13,6 +14,11 @@ class MyEnergi(object):
     TANK_STOP_STR = "TOP"
     TANK_BOTTOM_STR = "BOTTOM"
     BASE_URL = 'https://s18.myenergi.net/'
+    # When the myenergi server is busy (e.g. a second program in the house is
+    # also polling it) it returns HTTP 429. Retry that many times, backing off
+    # RETRY_BACKOFF_SECS * attempt seconds between tries, before giving up.
+    MAX_API_RETRIES = 4
+    RETRY_BACKOFF_SECS = 2
     TOP_TANK_ID = 1
     BOTTOM_TANK_ID = 2
     TANK_1_BOOST_SCHEDULE_SLOT_ID = 14
@@ -84,6 +90,34 @@ class MyEnergi(object):
             tank_name = MyEnergi.TANK_BOTTOM_STR
 
         return tank_name
+
+    @staticmethod
+    def _snap_schedule_to_quarter_hour(on_datetime, duration_timedelta):
+        """@brief Snap a schedule onto the 15-minute grid the eddi requires.
+
+                  The eddi boost scheduler only accepts start times and
+                  durations aligned to 15-minute boundaries (:00, :15, :30,
+                  :45); anything else is rejected with status -14.
+
+                  The start is floored to the previous quarter hour and the
+                  end ceiled to the next, so the whole requested window is
+                  always covered. (If you would rather never heat outside the
+                  cheap window, ceil the start and floor the end instead, and
+                  skip slots that then collapse to a zero/negative duration.)
+
+           @param on_datetime         A datetime for the requested on time.
+           @param duration_timedelta  A timedelta for the requested duration.
+           @return A (start_datetime, duration_timedelta) tuple aligned to the
+                   15-minute grid."""
+        start = on_datetime.replace(second=0, microsecond=0)
+        start -= timedelta(minutes=start.minute % 15)
+
+        end = (on_datetime + duration_timedelta).replace(second=0, microsecond=0)
+        remainder = end.minute % 15
+        if remainder:
+            end += timedelta(minutes=15 - remainder)
+
+        return start, end - start
 
     def __init__(self, api_key: str, uio=None):
         """@brief Constuctor
@@ -409,6 +443,11 @@ class MyEnergi(object):
             slot_id = MyEnergi.TANK_2_BOOST_SCHEDULE_SLOT_ID
 
         if on:
+            # The eddi rejects non-15-minute-aligned start/duration values
+            # with status -14, so snap the requested window onto the grid.
+            on_datetime, duration_timedelta = self._snap_schedule_to_quarter_hour(
+                on_datetime, duration_timedelta
+            )
             local_dt = on_datetime.astimezone()  # convert UTC → local time
             on_time_string = f"{local_dt.hour:02d}{local_dt.minute:02d}"
             duration_hours, remainder = divmod(duration_timedelta.seconds, 3600)
@@ -510,6 +549,54 @@ class MyEnergi(object):
         if self._uio:
             self._uio.debug(f"myenergi API DEBUG: {msg}")
 
+    def _get_with_retry(self, url):
+        """@brief Perform an authenticated GET, retrying on HTTP 429 (the
+                  server is rate limiting us) with a backoff. This helps when
+                  another program in the house is also polling the myenergi
+                  API and the two requests collide.
+
+                  Note: the thread lock only serialises requests within this
+                  process, so it cannot coordinate with a separate program;
+                  the 429 retry is what protects against that case.
+
+           @param url The URL to GET.
+           @return The requests.Response (guaranteed status 200).
+                   Raises on any other non-200 status and after the final retry."""
+        last_response = None
+        for attempt in range(1, MyEnergi.MAX_API_RETRIES + 1):
+            response = requests.get(
+                url, auth=HTTPDigestAuth(self._eddi_serial_number, self._api_key)
+            )
+            last_response = response
+
+            if response.status_code == 200:
+                return response
+
+            if response.status_code == 429:
+                # Honour a Retry-After header if present, otherwise back off
+                # a little more on each successive attempt.
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    delay = int(retry_after) if retry_after is not None \
+                        else MyEnergi.RETRY_BACKOFF_SECS * attempt
+                except ValueError:
+                    delay = MyEnergi.RETRY_BACKOFF_SECS * attempt
+                self._debug(
+                    f"_get_with_retry: HTTP 429 rate limited "
+                    f"(attempt {attempt}/{MyEnergi.MAX_API_RETRIES}), "
+                    f"retrying in {delay}s."
+                )
+                sleep(delay)
+                continue
+
+            # Any other non-200 status is a hard error — don't retry.
+            raise Exception(f"{response.status_code} error code returned from myenergi server.")
+
+        raise Exception(
+            f"{last_response.status_code} error code returned from myenergi server "
+            f"after {MyEnergi.MAX_API_RETRIES} attempts (rate limited)."
+        )
+
     def _exec_api_cmd(self, url):
         """@brief Run a command using the myenergi api and check for errors.
            @return The json response message."""
@@ -517,21 +604,29 @@ class MyEnergi(object):
         # we communicate with the myenergi server.
         with self._lock:
             self._debug(f"_exec_api_cmd: url={url}")
-            response = requests.get(url, auth=HTTPDigestAuth(self._eddi_serial_number, self._api_key))
-            if response.status_code != 200:
-                raise Exception(f"{response.status_code} error code returned from myenergi server.")
+            response = self._get_with_retry(url)
             self._debug(f"_exec_api_cmd: response.status_code={response.status_code}")
             response_dict = response.json()
 
             if response_dict:
-                index = 0
-                for elem in response_dict:
-                    pstr = json.dumps(elem, sort_keys=True, indent=4)
-                    self._debug(f"_exec_api_cmd: index={index}, elem={pstr}")
-                    index = index+1
+                # Log the full decoded response. A command reply (e.g. a
+                # boost-time call) is a single dict, so iterating it would only
+                # log its *keys* and hide the 'statustext' that explains any
+                # error. Dumping the whole object shows status + statustext.
+                self._debug(
+                    "_exec_api_cmd: response=" +
+                    json.dumps(response_dict, sort_keys=True, indent=4)
+                )
 
-                if 'status' in response_dict and response_dict['status'] != 0:
-                    raise Exception(f"{response_dict['status']} status code returned from myenergi server (should be 0).")
+                # Command responses are a dict carrying a status code (0 = OK).
+                # Status queries (jstatus) return a list and have no status.
+                if isinstance(response_dict, dict) and response_dict.get('status', 0) != 0:
+                    status      = response_dict.get('status')
+                    status_text = response_dict.get('statustext', '')
+                    detail      = f" ({status_text})" if status_text else ""
+                    raise Exception(
+                        f"{status} status code returned from myenergi server (should be 0){detail}."
+                    )
 
         return response_dict
 

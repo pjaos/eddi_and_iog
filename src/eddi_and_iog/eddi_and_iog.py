@@ -83,6 +83,15 @@ class EddiSyncApp:
         """Start the polling loop. Runs indefinitely."""
         self._info("=== Octopus -> eddi Intelligent water heating starting ===")
         self._info(f"Account: {self.octopus.account_number} | eddi: {self.myenergy.get_eddi_serial_number()} | TANK: {self._tank_str} | Poll: {self.poll_interval}s")
+        # Clear any reserved boost slot left over from a previous run. myenergi
+        # boost schedules recur weekly, so a slot left set by a crashed run
+        # would otherwise re-fire on the same weekday next week. This only
+        # touches our reserved slot, leaving the fixed overnight schedules alone.
+        try:
+            self.myenergy.set_tank_schedule(False, None, None, self._tank)
+            self._info("Cleared reserved eddi boost slot at startup.")
+        except Exception as exc:
+            self._info(f"Could not clear reserved eddi boost slot at startup: {exc}")
         while True:
             self._poll()
             time.sleep(self.poll_interval)
@@ -96,7 +105,7 @@ class EddiSyncApp:
         # Invalidate the cached eddi stats so _log_heater_power() always
         # reads live values rather than values from the previous poll.
         self.myenergy.invalidate_stats_cache()
-        dispatch = self.octopus.find_active_extra_dispatch()
+        dispatch = self.octopus.find_relevant_extra_dispatch()
 
         if dispatch:
             self._handle_active_dispatch(dispatch)

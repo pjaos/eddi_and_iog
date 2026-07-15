@@ -228,7 +228,7 @@ class TestOctopusClientHTTP:
         assert client._get_device_id() is None
 
     @patch("eddi_and_iog.octopus.requests.post")
-    def test_find_active_extra_dispatch_returns_active(self, mock_post):
+    def test_find_relevant_extra_dispatch_returns_active(self, mock_post):
         """A dispatch active right now that extends outside 23:30-05:30."""
         now = datetime.now(timezone.utc)
         start = (now - timedelta(minutes=10)).isoformat()
@@ -244,12 +244,12 @@ class TestOctopusClientHTTP:
         client = _make_octopus()
         # Override _is_outside_offpeak so it always reports "extra"
         client._is_outside_offpeak = MagicMock(return_value=True)
-        result = client.find_active_extra_dispatch()
+        result = client.find_relevant_extra_dispatch()
         assert result is not None
         assert "start" in result and "end" in result
 
     @patch("eddi_and_iog.octopus.requests.post")
-    def test_find_active_extra_dispatch_returns_none_when_inside_offpeak(self, mock_post):
+    def test_find_relevant_extra_dispatch_returns_none_when_inside_offpeak(self, mock_post):
         now = datetime.now(timezone.utc)
         start = (now - timedelta(minutes=10)).isoformat()
         end   = (now + timedelta(minutes=20)).isoformat()
@@ -263,11 +263,12 @@ class TestOctopusClientHTTP:
         )
         client = _make_octopus()
         client._is_outside_offpeak = MagicMock(return_value=False)
-        assert client.find_active_extra_dispatch() is None
+        assert client.find_relevant_extra_dispatch() is None
 
     @patch("eddi_and_iog.octopus.requests.post")
-    def test_find_active_extra_dispatch_skips_future(self, mock_post):
-        """A dispatch that hasn't started yet should not be returned."""
+    def test_find_relevant_extra_dispatch_returns_upcoming(self, mock_post):
+        """A dispatch that hasn't started yet IS returned now, so the caller can
+        write the eddi slot in advance and let the eddi's clock start it."""
         now = datetime.now(timezone.utc)
         start = (now + timedelta(hours=2)).isoformat()
         end   = (now + timedelta(hours=3)).isoformat()
@@ -281,10 +282,12 @@ class TestOctopusClientHTTP:
         )
         client = _make_octopus()
         client._is_outside_offpeak = MagicMock(return_value=True)
-        assert client.find_active_extra_dispatch() is None
+        result = client.find_relevant_extra_dispatch()
+        assert result is not None
+        assert "start" in result and "end" in result and "boundaries" in result
 
     @patch("eddi_and_iog.octopus.requests.post")
-    def test_find_active_extra_dispatch_skips_expired(self, mock_post):
+    def test_find_relevant_extra_dispatch_skips_expired(self, mock_post):
         """A dispatch that finished in the past should not be returned."""
         now = datetime.now(timezone.utc)
         start = (now - timedelta(hours=3)).isoformat()
@@ -299,7 +302,7 @@ class TestOctopusClientHTTP:
         )
         client = _make_octopus()
         client._is_outside_offpeak = MagicMock(return_value=True)
-        assert client.find_active_extra_dispatch() is None
+        assert client.find_relevant_extra_dispatch() is None
 
     @patch("eddi_and_iog.octopus.requests.post")
     def test_token_refresh_on_expiry_error(self, mock_post):
@@ -608,14 +611,14 @@ class TestEddiSyncAppPoll:
         now = datetime.now(timezone.utc)
         start = now + timedelta(minutes=start_offset_mins)
         end   = start + timedelta(minutes=duration_mins)
-        return {"start": start, "end": end, "raw": {}}
+        return {"start": start, "end": end, "boundaries": []}
 
     # --- new dispatch arrives ------------------------------------------------
 
     def test_new_dispatch_sets_schedule_and_flag(self):
         app, octopus, myenergi = self._make_app()
         dispatch = self._make_dispatch()
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         app._poll()
 
@@ -635,7 +638,7 @@ class TestEddiSyncAppPoll:
         dispatch = self._make_dispatch()
         app._slot_active = True
         app._active_end  = dispatch["end"]
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         app._poll()
 
@@ -649,7 +652,7 @@ class TestEddiSyncAppPoll:
         dispatch = self._make_dispatch(duration_mins=90)   # new end further out
         app._slot_active = True
         app._active_end  = original_end
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         app._poll()
 
@@ -662,7 +665,7 @@ class TestEddiSyncAppPoll:
         app, octopus, myenergi = self._make_app()
         app._slot_active = True
         app._active_end  = datetime.now(timezone.utc)
-        octopus.find_active_extra_dispatch.return_value = None
+        octopus.find_relevant_extra_dispatch.return_value = None
 
         app._poll()
 
@@ -676,7 +679,7 @@ class TestEddiSyncAppPoll:
 
     def test_no_dispatch_and_not_active_does_nothing(self):
         app, octopus, myenergi = self._make_app()
-        octopus.find_active_extra_dispatch.return_value = None
+        octopus.find_relevant_extra_dispatch.return_value = None
         assert app._slot_active is False
 
         app._poll()
@@ -700,7 +703,7 @@ class TestEddiSyncAppPoll:
         app, octopus, myenergi = self._make_app()
         self._setup_heater_mocks(myenergi)
         dispatch = self._make_dispatch()
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         app._poll()
 
@@ -716,7 +719,7 @@ class TestEddiSyncAppPoll:
         dispatch = self._make_dispatch()
         app._slot_active = True
         app._active_end  = dispatch["end"]
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         app._poll()
 
@@ -731,7 +734,7 @@ class TestEddiSyncAppPoll:
         dispatch = self._make_dispatch(duration_mins=90)
         app._slot_active = True
         app._active_end  = original_end
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         app._poll()
 
@@ -741,7 +744,7 @@ class TestEddiSyncAppPoll:
     def test_power_not_logged_when_no_dispatch(self):
         """Heater stat methods should NOT be called when there is no active dispatch."""
         app, octopus, myenergi = self._make_app()
-        octopus.find_active_extra_dispatch.return_value = None
+        octopus.find_relevant_extra_dispatch.return_value = None
 
         app._poll()
 
@@ -755,7 +758,7 @@ class TestEddiSyncAppPoll:
         app, octopus, myenergi = self._make_app()
         myenergi.get_eddi_heater_number.side_effect = Exception("comms error")
         dispatch = self._make_dispatch()
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         # Should not raise
         app._poll()
@@ -768,7 +771,7 @@ class TestEddiSyncAppPoll:
         myenergi.get_eddi_top_tank_temp.return_value = None
         myenergi.get_eddi_bottom_tank_temp.return_value = None
         dispatch = self._make_dispatch()
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         app._poll()  # no exception expected
 
@@ -777,7 +780,7 @@ class TestEddiSyncAppPoll:
         app, octopus, myenergi = self._make_app()
         self._setup_heater_mocks(myenergi, watts=0)
         dispatch = self._make_dispatch()
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
 
         app._poll()  # no exception expected
 
@@ -841,13 +844,13 @@ class TestEddiSyncAppFullCycle:
         now      = datetime.now(timezone.utc)
         dispatch = {"start": now - timedelta(minutes=5),
                     "end":   now + timedelta(minutes=55),
-                    "raw":   {}}
+                    "boundaries": []}
 
         with patch.dict(os.environ, {"MYENERGI_EDDI_TANK": "TOP"}):
             app = EddiSyncApp(octopus, myenergi, poll_interval=180)
 
         # --- iteration 1: dispatch is active ---
-        octopus.find_active_extra_dispatch.return_value = dispatch
+        octopus.find_relevant_extra_dispatch.return_value = dispatch
         app._poll()
         assert app._slot_active is True
         myenergi.set_tank_schedule.assert_called_once_with(
@@ -855,10 +858,393 @@ class TestEddiSyncAppFullCycle:
         )
 
         # --- iteration 2: dispatch has ended ---
-        octopus.find_active_extra_dispatch.return_value = None
+        octopus.find_relevant_extra_dispatch.return_value = None
         app._poll()
         assert app._slot_active is False
         # Second call should be the "clear" call
         assert myenergi.set_tank_schedule.call_count == 2
         second_call_args = myenergi.set_tank_schedule.call_args_list[1]
         assert second_call_args == ((False, None, None, app._tank),)
+
+
+# ===========================================================================
+# OctopusClient – _merge_dispatches (contiguous 30-min chunk merging)
+# ===========================================================================
+
+class TestOctopusMergeDispatches:
+    """Octopus splits a charge period into 30-min settlement chunks; these are
+    merged back into single windows, recording each internal join point."""
+
+    def test_empty(self):
+        assert OctopusClient._merge_dispatches([]) == []
+
+    def test_single_slot_no_boundaries(self):
+        m = OctopusClient._merge_dispatches([(_utc(12, 0), _utc(12, 30))])
+        assert len(m) == 1
+        assert m[0]["start"] == _utc(12, 0)
+        assert m[0]["end"] == _utc(12, 30)
+        assert m[0]["boundaries"] == []
+
+    def test_two_contiguous_chunks_merge(self):
+        """19:00-19:30 + 19:30-20:00 -> one 19:00-20:00 window, join recorded."""
+        m = OctopusClient._merge_dispatches(
+            [(_utc(19, 0), _utc(19, 30)), (_utc(19, 30), _utc(20, 0))]
+        )
+        assert len(m) == 1
+        assert m[0]["start"] == _utc(19, 0)
+        assert m[0]["end"] == _utc(20, 0)
+        assert m[0]["boundaries"] == [_utc(19, 30)]
+
+    def test_sub_tolerance_sliver_merges(self):
+        """A gap <= gap_tolerance_s (60s) is treated as continuous."""
+        m = OctopusClient._merge_dispatches(
+            [(_utc(12, 0), _utc(12, 30)), (_utc(12, 31), _utc(13, 0))]
+        )
+        assert len(m) == 1
+        assert m[0]["end"] == _utc(13, 0)
+
+    def test_gap_beyond_tolerance_stays_separate(self):
+        m = OctopusClient._merge_dispatches(
+            [(_utc(12, 0), _utc(12, 30)), (_utc(12, 35), _utc(13, 0))]
+        )
+        assert len(m) == 2
+
+    def test_fully_contained_slot_absorbed(self):
+        """A slot inside an existing window adds no boundary and no extension."""
+        m = OctopusClient._merge_dispatches(
+            [(_utc(12, 0), _utc(13, 0)), (_utc(12, 15), _utc(12, 45))]
+        )
+        assert len(m) == 1
+        assert m[0]["end"] == _utc(13, 0)
+        assert m[0]["boundaries"] == []
+
+    def test_unsorted_input_is_sorted(self):
+        m = OctopusClient._merge_dispatches(
+            [(_utc(19, 30), _utc(20, 0)), (_utc(19, 0), _utc(19, 30))]
+        )
+        assert len(m) == 1
+        assert m[0]["start"] == _utc(19, 0)
+        assert m[0]["end"] == _utc(20, 0)
+
+    def test_three_chunks_two_boundaries(self):
+        m = OctopusClient._merge_dispatches([
+            (_utc(11, 0), _utc(11, 30)),
+            (_utc(11, 30), _utc(12, 0)),
+            (_utc(12, 0), _utc(12, 30)),
+        ])
+        assert len(m) == 1
+        assert m[0]["end"] == _utc(12, 30)
+        assert m[0]["boundaries"] == [_utc(11, 30), _utc(12, 0)]
+
+    def test_two_separate_windows_preserved(self):
+        m = OctopusClient._merge_dispatches([
+            (_utc(11, 0), _utc(11, 30)),
+            (_utc(19, 0), _utc(19, 30)),
+        ])
+        assert len(m) == 2
+        assert m[0]["start"] == _utc(11, 0)
+        assert m[1]["start"] == _utc(19, 0)
+
+
+# ===========================================================================
+# OctopusClient – find_relevant_extra_dispatch (merge + selection)
+# ===========================================================================
+
+class TestOctopusFindRelevant:
+    """Selection of the earliest active-or-upcoming out-of-off-peak window.
+    _get_planned_dispatches is stubbed so no HTTP happens."""
+
+    @staticmethod
+    def _iso(dt):
+        return dt.isoformat()
+
+    def _client_with(self, raw_dispatches, outside=True):
+        client = _make_octopus()
+        client._get_planned_dispatches = lambda: raw_dispatches
+        client._is_outside_offpeak = MagicMock(return_value=outside)
+        return client
+
+    def test_merges_contiguous_chunks_into_one_window(self):
+        now = datetime.now(timezone.utc)
+        s1, e1 = now + timedelta(minutes=30), now + timedelta(minutes=60)
+        s2, e2 = e1, now + timedelta(minutes=90)
+        client = self._client_with([
+            {"start": self._iso(s1), "end": self._iso(e1)},
+            {"start": self._iso(s2), "end": self._iso(e2)},
+        ])
+        result = client.find_relevant_extra_dispatch()
+        assert result is not None
+        assert result["start"] == s1
+        assert result["end"] == e2
+        assert len(result["boundaries"]) == 1
+
+    def test_returns_none_when_all_past(self):
+        now = datetime.now(timezone.utc)
+        client = self._client_with([
+            {"start": self._iso(now - timedelta(hours=2)),
+             "end":   self._iso(now - timedelta(hours=1))},
+        ])
+        assert client.find_relevant_extra_dispatch() is None
+
+    def test_returns_none_when_inside_offpeak(self):
+        now = datetime.now(timezone.utc)
+        client = self._client_with([
+            {"start": self._iso(now - timedelta(minutes=10)),
+             "end":   self._iso(now + timedelta(minutes=50))},
+        ], outside=False)
+        assert client.find_relevant_extra_dispatch() is None
+
+    def test_skips_malformed_entry(self):
+        now = datetime.now(timezone.utc)
+        good_s = now + timedelta(minutes=30)
+        good_e = now + timedelta(minutes=60)
+        client = self._client_with([
+            {"start": self._iso(good_s)},                 # missing "end"
+            {"start": "not-a-date", "end": "also-bad"},   # unparseable
+            {"start": self._iso(good_s), "end": self._iso(good_e)},
+        ])
+        result = client.find_relevant_extra_dispatch()
+        assert result is not None
+        assert result["start"] == good_s
+        assert result["end"] == good_e
+
+    def test_returns_earliest_relevant_window(self):
+        now = datetime.now(timezone.utc)
+        early_s, early_e = now + timedelta(minutes=30), now + timedelta(minutes=60)
+        late_s,  late_e  = now + timedelta(hours=3),    now + timedelta(hours=4)
+        client = self._client_with([
+            {"start": self._iso(late_s),  "end": self._iso(late_e)},
+            {"start": self._iso(early_s), "end": self._iso(early_e)},
+        ])
+        assert client.find_relevant_extra_dispatch()["start"] == early_s
+
+    def test_empty_dispatch_list_returns_none(self):
+        assert self._client_with([]).find_relevant_extra_dispatch() is None
+
+
+# ===========================================================================
+# MyEnergi – _snap_schedule_to_quarter_hour (15-min grid alignment)
+# ===========================================================================
+
+class TestMyEnergiSnapSchedule:
+    """The eddi rejects non-15-min-aligned boost params (status -14); the start
+    is floored and the end ceiled onto the quarter-hour grid."""
+
+    def test_already_aligned_unchanged(self):
+        start, dur = _utc(14, 30), timedelta(minutes=30)   # end 15:00, aligned
+        s, d = MyEnergi._snap_schedule_to_quarter_hour(start, dur)
+        assert s == start and d == dur
+
+    def test_the_minus14_case(self):
+        """The exact slot from the log: 11:31 for 29 min -> 11:30 for 30 min."""
+        s, d = MyEnergi._snap_schedule_to_quarter_hour(_utc(11, 31), timedelta(minutes=29))
+        assert s == _utc(11, 30)
+        assert d == timedelta(minutes=30)
+
+    def test_start_floored_end_ceiled(self):
+        # 11:31 -> 11:44 (13 min): floor start to 11:30, ceil end to 11:45.
+        s, d = MyEnergi._snap_schedule_to_quarter_hour(_utc(11, 31), timedelta(minutes=13))
+        assert s == _utc(11, 30)
+        assert (s + d) == _utc(11, 45)
+
+    def test_result_is_quarter_aligned(self):
+        s, d = MyEnergi._snap_schedule_to_quarter_hour(_utc(23, 7), timedelta(minutes=45))
+        assert s.minute % 15 == 0
+        assert (d.seconds // 60) % 15 == 0
+
+    def test_seconds_are_dropped(self):
+        start = _utc(9, 0).replace(second=42)
+        s, _ = MyEnergi._snap_schedule_to_quarter_hour(start, timedelta(minutes=30))
+        assert s.second == 0
+
+    def test_schedule_string_snaps_start_and_duration(self):
+        """End-to-end: an unaligned request produces an aligned boost string."""
+        me = _make_myenergi()
+        # Monday 2024-01-01 14:31 for 29 min -> 14:30 for 30 min.
+        s = me._get_eddi_schedule_string(
+            True, datetime(2024, 1, 1, 14, 31), timedelta(minutes=29), MyEnergi.TOP_TANK_ID
+        )
+        assert s == "14-1430-030-01000000"
+
+
+# ===========================================================================
+# MyEnergi – _get_with_retry (HTTP 429 backoff)
+# ===========================================================================
+
+class TestMyEnergiGetWithRetry:
+    def setup_method(self):
+        self.me = _make_myenergi()
+
+    @staticmethod
+    def _resp(status, body=None, headers=None):
+        r = MagicMock()
+        r.status_code = status
+        r.headers = headers or {}
+        r.json.return_value = {} if body is None else body
+        return r
+
+    @patch("eddi_and_iog.myenergi.sleep")
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_retries_then_succeeds(self, mock_get, mock_sleep):
+        ok = self._resp(200, {"status": 0})
+        mock_get.side_effect = [self._resp(429), self._resp(429), ok]
+        assert self.me._get_with_retry("http://x") is ok
+        assert mock_get.call_count == 3
+        assert mock_sleep.call_count == 2
+
+    @patch("eddi_and_iog.myenergi.sleep")
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_gives_up_after_max_retries(self, mock_get, mock_sleep):
+        mock_get.return_value = self._resp(429)
+        with pytest.raises(Exception, match="rate limited"):
+            self.me._get_with_retry("http://x")
+        assert mock_get.call_count == MyEnergi.MAX_API_RETRIES
+        assert mock_sleep.call_count == MyEnergi.MAX_API_RETRIES
+
+    @patch("eddi_and_iog.myenergi.sleep")
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_non_429_error_raises_immediately(self, mock_get, mock_sleep):
+        mock_get.return_value = self._resp(500)
+        with pytest.raises(Exception, match="500"):
+            self.me._get_with_retry("http://x")
+        assert mock_get.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("eddi_and_iog.myenergi.sleep")
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_honours_retry_after_header(self, mock_get, mock_sleep):
+        mock_get.side_effect = [
+            self._resp(429, headers={"Retry-After": "7"}),
+            self._resp(200, {"status": 0}),
+        ]
+        self.me._get_with_retry("http://x")
+        mock_sleep.assert_called_once_with(7)
+
+
+# ===========================================================================
+# MyEnergi – _exec_api_cmd status / statustext handling
+# ===========================================================================
+
+class TestMyEnergiExecApiCmd:
+    def setup_method(self):
+        self.me = _make_myenergi()
+
+    @staticmethod
+    def _resp(status_code, body):
+        r = MagicMock()
+        r.status_code = status_code
+        r.headers = {}
+        r.json.return_value = body
+        return r
+
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_statustext_surfaced_in_exception(self, mock_get):
+        mock_get.return_value = self._resp(200, {"status": -14, "statustext": "invalid slot"})
+        with pytest.raises(Exception, match="invalid slot"):
+            self.me._exec_api_cmd("http://x")
+
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_nonzero_status_without_text_still_raises(self, mock_get):
+        mock_get.return_value = self._resp(200, {"status": -14, "statustext": ""})
+        with pytest.raises(Exception, match="-14"):
+            self.me._exec_api_cmd("http://x")
+
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_list_status_response_does_not_raise(self, mock_get):
+        # jstatus responses are a list and carry no top-level status field.
+        mock_get.return_value = self._resp(200, [{"eddi": [{"sno": 1}]}])
+        assert self.me._exec_api_cmd("http://x") is not None
+
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_status_zero_is_ok(self, mock_get):
+        body = {"status": 0, "statustext": ""}
+        mock_get.return_value = self._resp(200, body)
+        assert self.me._exec_api_cmd("http://x") == body
+
+
+# ===========================================================================
+# MyEnergi – set_water_tank_boost_schedules_off
+# ===========================================================================
+
+class TestMyEnergiWaterTankBoostOff:
+    @patch("eddi_and_iog.myenergi.requests.get")
+    def test_clears_both_tank_slots(self, mock_get):
+        r = MagicMock()
+        r.status_code = 200
+        r.headers = {}
+        r.json.return_value = {"status": 0}
+        mock_get.return_value = r
+
+        me = _make_myenergi()
+        me.set_water_tank_boost_schedules_off()
+
+        urls = [c[0][0] for c in mock_get.call_args_list]
+        assert len(urls) == 2
+        assert any("-14-0000-000-00000000" in u for u in urls)   # top slot cleared
+        assert any("-24-0000-000-00000000" in u for u in urls)   # bottom slot cleared
+
+
+# ===========================================================================
+# EddiSyncApp – upcoming window scheduled in advance
+# ===========================================================================
+
+class TestEddiSyncAppUpcoming:
+    def test_upcoming_window_is_scheduled_in_advance(self):
+        octopus = MagicMock(spec=OctopusClient)
+        myenergi = MagicMock(spec=MyEnergi)
+        myenergi.get_eddi_serial_number.return_value = "12345678"
+        for meth in ("get_eddi_heater_number", "get_eddi_selected_heater_watts",
+                     "get_eddi_top_tank_temp", "get_eddi_bottom_tank_temp"):
+            getattr(myenergi, meth).return_value = 1
+        with patch.dict(os.environ, {"MYENERGI_EDDI_TANK": "TOP"}):
+            app = EddiSyncApp(octopus, myenergi, poll_interval=180)
+
+        now = datetime.now(timezone.utc)
+        future = {"start": now + timedelta(hours=2),
+                  "end":   now + timedelta(hours=3),
+                  "boundaries": []}
+        octopus.find_relevant_extra_dispatch.return_value = future
+
+        app._poll()
+
+        myenergi.set_tank_schedule.assert_called_once_with(
+            True, future["start"], future["end"] - future["start"], app._tank
+        )
+        assert app._slot_active is True
+
+
+# ===========================================================================
+# EddiSyncApp – startup clear of the reserved boost slot
+# ===========================================================================
+
+class TestEddiSyncAppStartupClear:
+    class _StopLoop(Exception):
+        pass
+
+    def _make_app(self):
+        octopus = MagicMock(spec=OctopusClient)
+        octopus.account_number = "A-TEST1234"
+        myenergi = MagicMock(spec=MyEnergi)
+        myenergi.get_eddi_serial_number.return_value = "12345678"
+        with patch.dict(os.environ, {"MYENERGI_EDDI_TANK": "TOP"}):
+            app = EddiSyncApp(octopus, myenergi, poll_interval=180)
+        return app, octopus, myenergi
+
+    def test_run_clears_reserved_slot_before_polling(self):
+        app, octopus, myenergi = self._make_app()
+        # Break out of the otherwise-infinite loop on the first poll.
+        with patch.object(app, "_poll", side_effect=self._StopLoop):
+            with pytest.raises(self._StopLoop):
+                app.run()
+        # The clear is the very first schedule call, before any poll write.
+        first_call = myenergi.set_tank_schedule.call_args_list[0]
+        assert first_call == ((False, None, None, app._tank),)
+
+    def test_run_startup_clear_failure_is_non_fatal(self):
+        app, octopus, myenergi = self._make_app()
+        # If the clear raises and the failure were NOT swallowed, we'd see this
+        # exception instead of reaching the loop and raising _StopLoop.
+        myenergi.set_tank_schedule.side_effect = Exception("api down")
+        with patch.object(app, "_poll", side_effect=self._StopLoop):
+            with pytest.raises(self._StopLoop):
+                app.run()
