@@ -1,4 +1,3 @@
-import json
 import threading
 from time import sleep
 from datetime import timedelta
@@ -613,10 +612,14 @@ class MyEnergi(object):
                 # boost-time call) is a single dict, so iterating it would only
                 # log its *keys* and hide the 'statustext' that explains any
                 # error. Dumping the whole object shows status + statustext.
-                self._debug(
-                    "_exec_api_cmd: response=" +
-                    json.dumps(response_dict, sort_keys=True, indent=4)
-                )
+                # Commented out as this makes the log large and difficult to read.
+                # Code left here in case it is needed for debugging in which case the # characters can be removed
+                # to show extra output.
+#                import json
+#                self._debug(
+#                    "_exec_api_cmd: response=" +
+#                    json.dumps(response_dict, sort_keys=True, indent=4)
+#                )
 
                 # Command responses are a dict carrying a status code (0 = OK).
                 # Status queries (jstatus) return a list and have no status.
